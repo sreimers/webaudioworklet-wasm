@@ -23,7 +23,15 @@
  **********************************************************/ 
 
 var audioCtx;
-var oscillatorNode, audioWorkletNode;
+var oscillatorNode, filterWorkletNode;
+var time;
+
+function get_audio() {
+    // console.log("get audio:", filterWorkletNode)
+    setTimeout(get_audio, 100)
+    filterWorkletNode.port.postMessage({cmd: 'audio', payload: time});
+    time = audioCtx.currentTime;
+}
 
 window.onload = () => {
     document.getElementById("startBtn")
@@ -62,7 +70,12 @@ configureAudioGraph = async ()=> {
     const byteCode = await response.arrayBuffer();
 
     //  Sends bytecode to the AudioWorkletProcessor for instanciation
-    filterWorkletNode.port.postMessage(byteCode);
+    filterWorkletNode.port.postMessage({cmd: 'wasm', payload: byteCode});
+
+    filterWorkletNode.port.onmessage = (e) => {
+        console.log(e.data);
+        // delete e.data;
+    }
 
     //  Builds audio graph
     oscillatorNode
@@ -70,6 +83,8 @@ configureAudioGraph = async ()=> {
     .connect(audioCtx.destination)
 
     oscillatorNode.start()
+    time = audioCtx.currentTime;
+    setTimeout(get_audio, 10)
 }
 </script>
 </head>

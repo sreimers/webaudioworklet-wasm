@@ -2,35 +2,44 @@ class WorkletProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
         this.WEBEAUDIO_FRAME_SIZE = 128;
+        this.WEBEAUDIO_READ_SIZE = 960; // 20ms@48000 Hz
 
         this.port.onmessage = (e) => {
-            //  Instanciate 
-            WebAssembly.instantiate(e.data)
-            .then((result) => {
-                /* result : {module: Module, instance: Instance} */
-                //  exposes C functions to the outside world. only for readness
-                const exports = result.instance.exports;
-                //  Gets pointer to wasm module memory
-                this.inputStart   = exports.inputBufferPtr();
-                this.outputStart  = exports.outputBufferPtr();
-                //  Create shadow buffer of float.
-                this.inputBuffer  = new Float32Array(exports.memory.buffer,
-                                                     this.inputStart,
-                                                     this.WEBEAUDIO_FRAME_SIZE);
-                this.outputBuffer = new Float32Array(exports.memory.buffer,
-                                                     this.outputStart,
-                                                     this.WEBEAUDIO_FRAME_SIZE);
-                //  Gets the filter function
-                this.filter = exports.filter;
-            });
+            if (e.data.cmd == 'wasm') {
+                WebAssembly.instantiate(e.data.payload, {})
+                .then((result) => {
+                    const exports = result.instance.exports;
+
+                    this.store = exports.magic_store;
+                    this.copy = exports.magic_copy;
+                    exports.magic_alloc(sampleRate);
+
+                    this.writeBuffer = new Float32Array(exports.memory.buffer,
+                                                         exports.magic_write(),
+                                                         this.WEBEAUDIO_FRAME_SIZE);
+                    this.readBuffer  = new Int16Array(exports.memory.buffer,
+                                                         exports.magic_read(),
+                                                         this.WEBEAUDIO_READ_SIZE);
+                });
+            }
+
+            if (e.data.cmd == 'audio') {
+                if (this.copy(e.data.payload, 0) < 0)
+                    return;
+
+                var data = [];
+                this.readBuffer.forEach((e) => {data.push(e);})
+                this.port.postMessage(data)
+            }
         }
     }
     process(inputList, outputList, parameters) {   
+        if (!this.writeBuffer)
+            return true;
 
-        this.inputBuffer.set(inputList[0][0]);
-        this.filter();
-        outputList[0][0].set(this.outputBuffer);
-        
+        this.writeBuffer.set(inputList[0][0]);
+        console.log(this.store(currentTime));
+
         return true;
     }
 }
